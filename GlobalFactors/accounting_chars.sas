@@ -2,7 +2,7 @@
 *                     Characteritics to Extract 
 *************************************************************************** ; 
 /* Pure Accounting Based Characteristics */
-%let char_vars=
+%let acc_chars=
 	/* Accounting Based Size Measures */
 	assets sales book_equity net_income enterprise_value
 	
@@ -105,7 +105,7 @@
 	op_at pi_nix op_atl1 gp_atl1 ope_bel1 cop_atl1
 	at_be ocfq_saleq_std  
 	aliq_at aliq_mat tangibility
-	eq_dur f_score o_score z_score kz_index intrinsic_value
+	eq_dur f_score o_score z_score kz_index intrinsic_value ival_me
 	sale_emp_gr1 emp_gr1 cash_at
 	earnings_variability ni_ar1 ni_ivol
 	
@@ -116,7 +116,7 @@
 	gpoa_ch5 roe_ch5 roa_ch5 cfoa_ch5 gmar_ch5
 ;
 
-%put ### In total %nwords(&char_vars.) characteristics will be created ###;
+%put ### In total %nwords(&acc_chars.) characteristics will be created ###;
 
 **********************************************************************************************************************
 *                                    MACRO - Add Helper Vars to Standardized Compustat Accounting 
@@ -215,7 +215,7 @@ Description:
 		
 		netdebt_x		= debt_x - coalesce(che, 0); /* Net Debt for calculating Enterprise Value */
 		txditc_x		= coalesce(txditc, sum(txdb, itcb));
-		be_x			= seq_x+coalesce(txditc_x, 0)-coalesce(pstk_x, 0); /* The last one is sort of controversial in the sense that it is not what FF does*/
+		be_x			= seq_x+coalesce(txditc_x, 0)-coalesce(pstk_x, 0); 
 		bev_x			= coalesce(icapt+coalesce(dlc, 0)-coalesce(che, 0), netdebt_x+seq_x+coalesce(mib, 0));
 		
 		coa_x			= ca_x - che;  /* Operating (non cash) current assets */
@@ -1136,6 +1136,7 @@ Description:
 			%let name_me = %sysfunc(tranwrd(&var_me., _x, %str()));  /* Remove '_x' from var name */
 			&name_me._me = (&var_me.*fx)/me_company;
 		%end;
+		ival_me = (intrinsic_value*fx) / me_company;
 		
 		/* Characteristics Scaled by Market Enterprise Value */
 		%let mev_vars = at_x bev_x ppent be_x che sale_x gp_x ebitda_x ebit_x ope_x ni_x nix_x cop_x ocf_x fcf_x

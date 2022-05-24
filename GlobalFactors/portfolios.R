@@ -16,9 +16,9 @@ library(data.table)
 
 # User Input -----------------------
 # Paths
-data_path <- "../../Data"
-output_path <- "../../PaperFactors"
-legacy_path <- "../../../Pre-Public/Data"
+data_path <- "Data"
+output_path <- "PaperFactors"
+legacy_path <- "Legacy"
 # Countries
 countries <- list.files(path = paste0(data_path, "/Characteristics")) %>% str_remove(".csv")
 # Chars 
@@ -36,7 +36,7 @@ chars <- c(
   "ebit_bev",            "ebit_sale",           "ebitda_mev",          "emp_gr1",            
   "eq_dur",              "eqnetis_at",          "eqnpo_12m",           "eqnpo_me",           
   "eqpo_me",             "f_score",             "fcf_me",              "fnl_gr1a",           
-  "gp_at",               "gp_atl1",             "intrinsic_value",     "inv_gr1",            
+  "gp_at",               "gp_atl1",             "ival_me",             "inv_gr1",            
   "inv_gr1a",            "iskew_capm_21d",      "iskew_ff3_21d",       "iskew_hxz4_21d",     
   "ivol_capm_21d",       "ivol_capm_252d",      "ivol_ff3_21d",        "ivol_hxz4_21d",      
   "kz_index",            "lnoa_gr1a",           "lti_gr1a",            "market_equity",      
@@ -65,7 +65,7 @@ chars <- c(
 )
 # Portfolio settings
 settings <- list(
-  end_date = as.Date("2020-12-31"),
+  end_date = as.Date("2021-12-31"),
   pfs = 3,
   source = c("CRSP", "COMPUSTAT"),                           
   wins_ret = T,
@@ -164,11 +164,10 @@ portfolios <- function(
     ind_data[, gics := as.numeric(substr(ind_data$gics, 1, 2))]
     ind_gics <- ind_data[, .(
       n = .N,
-      excntry = str_to_upper(excntry),
       ret_ew = mean(ret_exc_lead1m),
       ret_vw = sum(ret_exc_lead1m * me) / sum(me),
       ret_vw_cap = sum(ret_exc_lead1m * me_cap) / sum(me_cap) 
-    ), by = .(gics, eom)]
+    ), by = .(gics, eom)][, excntry := str_to_upper(excntry)]
     # Lead month to match using leaded returns
     ind_gics[, eom := ceiling_date(eom+1, unit = "month")-1]
     ind_gics <- ind_gics[n >= bp_min_n]
@@ -178,11 +177,10 @@ portfolios <- function(
       ind_data <- ind_data[!is.na(ff49)]
       ind_ff49 <- ind_data[, .(
         n = .N,
-        excntry = str_to_upper(excntry),
         ret_ew = mean(ret_exc_lead1m),
         ret_vw = sum(ret_exc_lead1m * me) / sum(me),
         ret_vw_cap = sum(ret_exc_lead1m * me_cap) / sum(me_cap) 
-      ), by = .(ff49, eom)]
+      ), by = .(ff49, eom)][, excntry := str_to_upper(excntry)]
       ind_ff49[, eom := ceiling_date(eom+1, unit = "month")-1]
       ind_ff49 <- ind_ff49[n >= bp_min_n]
     }
@@ -449,7 +447,7 @@ if (settings$daily_pf) {
 }
 
 # Regional Portfolios ------------------------------------------------
-regional_data <- function(data, mkt, date_col, countries, weighting, countries_min, periods_min, stocks_min) {
+regional_data <- function(data, mkt, date_col, char_col, countries, weighting, countries_min, periods_min, stocks_min) {
   # Determine Country Weights
   weights <- mkt[, .(excntry, get(date_col), mkt_vw_exc, "country_weight" = case_when(
     weighting == "market_cap" ~ me_lag1,
@@ -459,41 +457,64 @@ regional_data <- function(data, mkt, date_col, countries, weighting, countries_m
   weights %>% setnames(old="V2", new="date_col")
   # Portfolio Return 
   pf <- data[excntry %in% countries & n_stocks_min >= stocks_min] 
-  pf %>% setnames(old=date_col, new="date_col")
+  pf %>% setnames(old=c(date_col, char_col), new = c("date_col", "char_col"))
   pf <- weights[pf, on = .(excntry, date_col)]
-  pf <- pf[, .(
+  pf <- pf[!is.na(mkt_vw_exc), .(  
     n_countries = .N,
     direction = unique(direction),
     ret_ew = sum(ret_ew*country_weight) / sum(country_weight),
     ret_vw = sum(ret_vw*country_weight) / sum(country_weight),
     ret_vw_cap = sum(ret_vw_cap*country_weight) / sum(country_weight),
     mkt_vw_exc = sum(mkt_vw_exc * country_weight) / sum(country_weight) 
-  ), by = .(characteristic, date_col)]
+  ), by = .(char_col, date_col)]
   # Minimum Requirement: Countries
   pf <- pf[n_countries >= countries_min]
   # Minimum Requirement: Months
-  pf[, periods := .N, by = .(characteristic)]
+  pf[, periods := .N, by = .(char_col)]
   pf <- pf[periods >= periods_min][, periods := NULL]
-  pf %>% setnames(old = "date_col", new = date_col)
+  pf %>% setorder(char_col, date_col)
+  pf %>% setnames(old = c("date_col", "char_col"), new = c(date_col, char_col))
   return(pf)
 }
+# Regional Factors
 regional_pfs <- 1:nrow(regions) %>% lapply(function(i) {
   info <- regions[i, ]
-  reg_pf <- lms_returns %>% regional_data(mkt=market, countries = unlist(info$country_codes), date_col = "eom", 
+  reg_pf <- lms_returns %>% regional_data(mkt=market, countries = unlist(info$country_codes), date_col = "eom", char_col = "characteristic", 
                                           weighting = settings$regional_pfs$country_weights,
                                           countries_min = info$countries_min, periods_min = settings$regional_pfs$months_min, 
                                           stocks_min = settings$regional_pfs$stocks_min)
   reg_pf %>% mutate(region = info$name) %>% select(region, characteristic, direction, eom, n_countries, ret_ew, ret_vw, ret_vw_cap, mkt_vw_exc)
-}) %>% bind_rows() 
+}) %>% rbindlist() 
 if (settings$daily_pf) {
   regional_pfs_daily <- 1:nrow(regions) %>% lapply(function(i) {
     info <- regions[i, ]
-    reg_pf <- lms_daily %>% regional_data(mkt=market_daily, countries = unlist(info$country_codes), date_col = "date", 
+    reg_pf <- lms_daily %>% regional_data(mkt=market_daily, countries = unlist(info$country_codes), date_col = "date", char_col = "characteristic", 
                                           weighting = settings$regional_pfs$country_weights,
                                           countries_min = info$countries_min, periods_min = settings$regional_pfs$months_min*21, 
                                           stocks_min = settings$regional_pfs$stocks_min)
     reg_pf %>% mutate(region = info$name) %>% select(region, characteristic, direction, date, n_countries, ret_ew, ret_vw, ret_vw_cap, mkt_vw_exc)
-  }) %>% bind_rows() 
+  }) %>% rbindlist() 
+}
+# Regional Cluster Portfolios
+regional_clusters <- 1:nrow(regions) %>% lapply(function(i) {
+  info <- regions[i, ]
+  reg_pf <- cluster_pfs %>% rename("n_stocks_min"=n_factors) %>% mutate(direction = NA_real_) %>% # Hack to make the function applicable
+    regional_data(mkt=market, countries = unlist(info$country_codes), date_col = "eom", char_col = "cluster",
+                  weighting = settings$regional_pfs$country_weights,
+                  countries_min = info$countries_min, periods_min = settings$regional_pfs$months_min, 
+                  stocks_min = 1)
+  reg_pf %>% mutate(region = info$name) %>% select(region, cluster, eom, n_countries, ret_ew, ret_vw, ret_vw_cap, mkt_vw_exc)
+}) %>% rbindlist() 
+if (settings$daily_pf) {
+  regional_clusters_daily <- 1:nrow(regions) %>% lapply(function(i) {
+    info <- regions[i, ]
+    reg_pf <- cluster_pfs_daily %>% rename("n_stocks_min"=n_factors) %>% mutate(direction = NA_real_) %>% # Hack to make the function applicable
+      regional_data(mkt=market_daily, countries = unlist(info$country_codes), date_col = "date", char_col = "cluster", 
+                    weighting = settings$regional_pfs$country_weights,
+                    countries_min = info$countries_min, periods_min = settings$regional_pfs$months_min*21, 
+                    stocks_min = 1)
+    reg_pf %>% mutate(region = info$name) %>% select(region, cluster, date, n_countries, ret_ew, ret_vw, ret_vw_cap, mkt_vw_exc)
+  }) %>% rbindlist() 
 }
 
 # Save ----------------
@@ -512,7 +533,7 @@ if(!is.null(legacy_path)) {
   if (settings$ind_pf) {
     gics_returns[eom <= settings$end_date] %>% fwrite(file = paste0(folder, "/industry_gics.csv"))
     if (nrow(ff49_returns) != 0) {
-      ff49_returns[eom <= settings$end_date] %?% fwrite(file = paste0(folder, "/industry_ff49.csv"))
+      ff49_returns[eom <= settings$end_date] %>% fwrite(file = paste0(folder, "/industry_ff49.csv"))
     }
   }
 }
@@ -533,11 +554,11 @@ if (settings$daily_pf) {
 if (settings$ind_pf) {
   gics_returns[eom <= settings$end_date] %>% fwrite(file = paste0(output_path, "/industry_gics.csv"))
   if (nrow(ff49_returns) != 0) {
-    ff49_returns[eom <= settings$end_date] %?% fwrite(file = paste0(output_path, "/industry_ff49.csv"))
+    ff49_returns[eom <= settings$end_date] %>% fwrite(file = paste0(output_path, "/industry_ff49.csv"))
   }
 }
 
-# Save Regional Factors
+# Regional Factors
 reg_folder <- paste0(output_path, "/Regional Factors")
 if (!dir.exists(reg_folder)) {
   dir.create(reg_folder)
@@ -554,6 +575,24 @@ if (settings$daily_pf) {
     regional_pfs_daily[date <= settings$end_date & region %in% reg] %>% fwrite(file = paste0(reg_folder_daily, "/", str_to_sentence(reg), ".csv"))
   }
 }
+# Regional Clusters
+reg_folder <- paste0(output_path, "/Regional Clusters")
+if (!dir.exists(reg_folder)) {
+  dir.create(reg_folder)
+}
+for (reg in unique(regional_clusters$region)) {
+  regional_clusters[eom <= settings$end_date & region %in% reg] %>% fwrite(file = paste0(reg_folder, "/", str_to_sentence(reg), ".csv"))
+}
+if (settings$daily_pf) {
+  reg_folder_daily <- paste0(output_path, "/Regional Clusters Daily")
+  if (!dir.exists(reg_folder_daily)) {
+    dir.create(reg_folder_daily)
+  }
+  for (reg in unique(regional_clusters_daily$region)) {
+    regional_clusters_daily[date <= settings$end_date & region %in% reg] %>% fwrite(file = paste0(reg_folder_daily, "/", str_to_sentence(reg), ".csv"))
+  }
+}
+
 # Save Long/Short Factors by Country
 cnt_folder <- paste0(output_path, "/Country Factors")
 if (!dir.exists(cnt_folder)) {
@@ -570,4 +609,11 @@ if (settings$daily_pf) {
   for (exc in unique(lms_daily$excntry)) {
     lms_daily[date <= settings$end_date & excntry==exc] %>% fwrite(file = paste0(cnt_folder_daily, "/", exc, ".csv"))
   }
+}
+
+# Save supplementary information
+nyse_size_cutoffs %>% fwrite(file = paste0(output_path, "/nyse_cutoffs.csv"))
+ret_cutoffs %>% fwrite(file = paste0(output_path, "/return_cutoffs.csv"))
+if (settings$daily_pf) {
+  ret_cutoffs_daily %>% fwrite(file = paste0(output_path, "/return_cutoffs_daily.csv"))
 }

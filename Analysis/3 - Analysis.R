@@ -31,26 +31,20 @@ eb_est <- search_list %>% sapply(simplify = F, USE.NAMES = T, function(x) {
       overlapping = settings$eb$overlapping 
     )
   # Run Empirical Bayes
-  set.seed(settings$seed)  # Seed due to bootstrap
-  for (i in 1:10) {
-    op <- data %>% 
-      emp_bayes( 
-        cluster_labels = cluster_labels, 
-        min_obs = settings$eb$min_obs,
-        fix_alpha = settings$eb$fix_alpha, 
-        bs_cov = settings$eb$bs_cov, 
-        layers = x[[3]], 
-        shrinkage = settings$eb$shrinkage, 
-        cor_type = settings$eb$cor_type, 
-        bs_samples = settings$eb$bs_samples
-      )
-    if (is.null(op)) {
-      print(paste("---> MLE failure happened for", x[[1]], x[[2]], ifelse(length(x)==4, x[[4]], "")))
-    } else {
-      print(paste("--->", x[[1]], x[[2]], ifelse(length(x)==4, x[[4]], ""), "converged after", i, "attempts"))
-      return(op) 
-    }
-  }
+  op <- data %>% 
+    emp_bayes( 
+      cluster_labels = cluster_labels, 
+      min_obs = settings$eb$min_obs,
+      fix_alpha = settings$eb$fix_alpha, 
+      bs_cov = settings$eb$bs_cov, 
+      layers = x[[3]], 
+      shrinkage = settings$eb$shrinkage, 
+      cor_type = settings$eb$cor_type, 
+      bs_samples = settings$eb$bs_samples, 
+      seed = settings$seed
+    )
+  # Output
+  return(op)
 })
 
 # Simulations EB vs. BY --------------
@@ -85,11 +79,11 @@ if (update_sim) {
   set.seed(settings$seed)
   sim <- list(
     "alpha_0" = 0,
-    "t" = 12*68,      # Median amount of data
+    "t" = 12*70,      # Median amount of data
     "clusters" = 13,
     "fct_pr_cl" = 10,
-    "corr_within" = 0.55, 
-    "corr_across" = 0.03,
+    "corr_within" = 0.58, 
+    "corr_across" = 0.02,
     "n_sims" = 10000,
     "tau_c" = c(0.01, seq(from = 0.05, to = 0.5, by = 0.05)),
     "tau_w" = c(0.01, 0.2)
@@ -130,13 +124,14 @@ tpf_factors <- prepare_tpf_factors(region = settings$tpf_factors$region, orig_si
 opt_s <- tpf_factors$long %>% optimal_shrinkage(k = settings$tpf_factors$k)
 
 # Posterior Over time -----------------
+ot_region <- "world"
 if (update_post_over_time) {
   for (fix_taus in c(T,F)) {
     if (fix_taus) {
       fixed_priors <- list(
-        "alpha" = eb_est$us$mle %>% filter(estimate == "alpha") %>% pull(ml_est), 
-        "tau_c" = eb_est$us$mle %>% filter(estimate == "tau_c") %>% pull(ml_est), 
-        "tau_s" = eb_est$us$mle %>% filter(estimate == "tau_s") %>% pull(ml_est)
+        "alpha" = eb_est[[ot_region]]$mle %>% filter(estimate == "alpha") %>% pull(ml_est), 
+        "tau_c" = eb_est[[ot_region]]$mle %>% filter(estimate == "tau_c") %>% pull(ml_est), 
+        "tau_s" = eb_est[[ot_region]]$mle %>% filter(estimate == "tau_s") %>% pull(ml_est)
       )
     } else {
       fixed_priors <- NULL
@@ -146,7 +141,7 @@ if (update_post_over_time) {
     periods <- periods[month(periods) == 12]  # Only estimate once per year
     
     time_chars <- regional_pfs %>% 
-      filter(region == "us" & eom <= as.Date("1960-12-31")) %>% 
+      filter(region == ot_region & eom <= as.Date("1960-12-31")) %>% 
       group_by(characteristic) %>%
       filter(n() >= settings$eb$min_obs) %>%
       pull(characteristic) %>% 
@@ -158,33 +153,25 @@ if (update_post_over_time) {
       data <- regional_pfs %>% 
         filter(characteristic %in% time_chars) %>%
         filter(eom >= settings$start_date & eom <= end_date) %>%
-        filter(region == "us") %>% 
+        filter(region == ot_region) %>% 
         eb_prepare(
           scale_alpha = settings$eb$scale_alpha, 
           overlapping = settings$eb$overlapping 
         )
       # Run Empirical Bayes
-      set.seed(settings$seed)  # Seed due to bootstrap
-      for (i in 1:10) {
-        eb_act <- data %>% 
-          emp_bayes( 
-            cluster_labels = cluster_labels, 
-            min_obs = settings$eb$min_obs,
-            fix_alpha = settings$eb$fix_alpha, 
-            bs_cov = settings$eb$bs_cov, 
-            layers = 2, 
-            shrinkage = settings$eb$shrinkage, 
-            cor_type = settings$eb$cor_type, 
-            bs_samples = 1000, 
-            priors = fixed_priors
-          )
-        if (is.null(eb_act)) {
-          print(paste("---> MLE failure happened for", end_date))
-        } else {
-          print(paste("--->", end_date, "converged after", i, "attempts"))
-          break 
-        }
-      }
+      eb_act <- data %>% 
+        emp_bayes( 
+          cluster_labels = cluster_labels, 
+          min_obs = settings$eb$min_obs,
+          fix_alpha = settings$eb$fix_alpha, 
+          bs_cov = settings$eb$bs_cov, 
+          layers = 2, 
+          shrinkage = settings$eb$shrinkage, 
+          cor_type = settings$eb$cor_type, 
+          bs_samples = 1000, 
+          priors = fixed_priors,
+          seed = settings$seed
+        )
       eb_act$input <- NULL
       eb_act$end_date <- end_date
       return(eb_act)
@@ -242,28 +229,20 @@ if (update_post_is) {
         overlapping = settings$eb$overlapping 
       )
     # Run Empirical Bayes
-    set.seed(settings$seed)  # Seed due to bootstrap
-    # Run at most 10 times if MLE fails to converge
-    for (i in 1:10) {
-      eb_act <- data %>% 
-        emp_bayes( 
-          cluster_labels = cluster_labels, 
-          min_obs = settings$eb$min_obs,
-          fix_alpha = settings$eb$fix_alpha, 
-          bs_cov = settings$eb$bs_cov, 
-          layers = 2, 
-          shrinkage = settings$eb$shrinkage, 
-          cor_type = settings$eb$cor_type, 
-          bs_samples = 1000
-        )
-      if (is.null(eb_act)) {
-        print(paste("---> MLE failure happened for", end_date))
-      } else {
-        print(paste("--->", end_date, "converged after", i, "attempts"))
-        return(eb_act$factors %>% mutate(est_date = end_date))
-      }
-    }
-    
+    eb_act <- data %>% 
+      emp_bayes( 
+        cluster_labels = cluster_labels, 
+        min_obs = settings$eb$min_obs,
+        fix_alpha = settings$eb$fix_alpha, 
+        bs_cov = settings$eb$bs_cov, 
+        layers = 2, 
+        shrinkage = settings$eb$shrinkage, 
+        cor_type = settings$eb$cor_type, 
+        bs_samples = 1000,
+        seed = settings$seed
+      )
+    # Output 
+    eb_act$factors %>% mutate(est_date = end_date)
   }) %>% bind_rows()
   posterior_is %>% saveRDS(file = paste0(object_path, "/posterior_is.RDS"))
 } else {
@@ -272,18 +251,18 @@ if (update_post_is) {
 sig_oos_pfs <- posterior_is %>% trading_on_significance()
 
 # Harvey et al (2016) Simulation - Baseline ------------------------------
-# We use the baseline specification from table 5 - Panel A where the average correlation is 0
+# We use the baseline specification from table 5 - Panel A where the average correlation is 0 (the average correlation among factors in our data is 7%)
 # 1300 * (1-0.396)  The harvey et al numbers are m=1297 and m_true=783
 harvey_base <- list(
   alpha_0 = 0,
-  t = 68*12,  
+  t = 70*12,  
   ret = 4.4 / 12,
   vol = 10 / sqrt(12),
   cl = 26,
   cl_true = 16,
   fct_pr_cl = 50,
-  corr_across = 0,
-  corr_within = 0.5,
+  corr_across = 0.02,
+  corr_within = 0.58,
   tau_ws = c(0.21),         # We estimate it at 0.21
   n_sims = 50,
   fix_alpha = T
@@ -293,7 +272,7 @@ harvey_base$n <- harvey_base$cl * harvey_base$fct_pr_cl
 harvey_base$n_true <- harvey_base$cl_true * harvey_base$fct_pr_cl
 
 if (update_harvey_baseline) {
-  harvey_base_res <- harvey_et_al_sim(sim_settings = harvey_base, seed = set.seed(settings$seed))
+  harvey_base_res <- harvey_et_al_sim(sim_settings = harvey_base, seed = settings$seed)
   harvey_base_res <- list("settings" = harvey_base, "sim" = harvey_base_res)
   harvey_base_res %>% saveRDS(file = paste0(object_path, "/harvey_res_baseline.RDS"))
 } else {
@@ -301,18 +280,18 @@ if (update_harvey_baseline) {
 }
 
 # Harvey et al (2016) Simulation - Worst Case
-# We use the worst cases specification from table 5 - Panel B where the average correlation is 0
+# We use the worst cases specification from table 5 - Panel B where the average correlation is 0 (the average correlation among factors in our data is 7%)
 # 2500 * (1-0.683) = 800  The harvey numbers are m=2458 and m_true=779
 harvey_worst <- list(
   alpha_0 = 0,
-  t = 68*12,  
+  t = 70*12,                # Median number of years for US factor
   ret = 4.4 / 12,
   vol = 10 / sqrt(12),
   cl = 50,
   cl_true = 16,
   fct_pr_cl = 50,
-  corr_across = 0,
-  corr_within = 0.5,
+  corr_across = 0.02,
+  corr_within = 0.58,
   tau_ws = c(0.21),         # We estimate it at 0.21 Same as what we estimate
   n_sims = 50,
   fix_alpha = T
@@ -322,7 +301,7 @@ harvey_worst$n <- harvey_worst$cl * harvey_worst$fct_pr_cl
 harvey_worst$n_true <- harvey_worst$cl_true * harvey_worst$fct_pr_cl
 
 if (update_harvey_worstcase) {
-  harvey_worst_res <- harvey_et_al_sim(sim_settings = harvey_worst, seed = set.seed(settings$seed))
+  harvey_worst_res <- harvey_et_al_sim(sim_settings = harvey_worst, seed = settings$seed)
   harvey_worst_res <- list("settings" = harvey_worst, "sim" = harvey_worst_res)
   harvey_worst_res %>% saveRDS(file = paste0(object_path, "/harvey_res_worstcase.RDS"))
 } else {
@@ -343,26 +322,18 @@ if (FALSE) {
       overlapping = settings$eb$overlapping # If we start in 1955-02-28 we lose 12 factors relative to starting in 1972-11-30
     )
   # Run Empirical Bayes
-  set.seed(settings$seed)  # Seed due to bootstrap
-  for (i in 1:10) {
-    op <- data %>% 
-      emp_bayes( 
-        cluster_labels = cluster_labels, 
-        min_obs = settings$eb$min_obs,
-        fix_alpha = settings$eb$fix_alpha, 
-        bs_cov = settings$eb$bs_cov, 
-        layers = 2, 
-        shrinkage = settings$eb$shrinkage, 
-        cor_type = settings$eb$cor_type, 
-        bs_samples = settings$eb$bs_samples
-      )
-    if (is.null(op)) {
-      print(paste("---> MLE failure"))
-    } else {
-      print(paste("---> converged after", i, "attempts"))
-      break
-    }
-  }
+  op <- data %>% 
+    emp_bayes( 
+      cluster_labels = cluster_labels, 
+      min_obs = settings$eb$min_obs,
+      fix_alpha = settings$eb$fix_alpha, 
+      bs_cov = settings$eb$bs_cov, 
+      layers = 2, 
+      shrinkage = settings$eb$shrinkage, 
+      cor_type = settings$eb$cor_type, 
+      bs_samples = settings$eb$bs_samples,
+      seed = settings$seed
+    )
   # OOS-replication rate
   op$factors %>%
     left_join(char_info %>% select(characteristic, significance), by = "characteristic") %>%
