@@ -1,13 +1,34 @@
 # CHANGELOG.md
-This change log keeps track of changes to the underlying data set. In brackets, we highlight versions of importance. The version with _factor data set_ is the basis of the factor portfolios we upload at [https://jkpfactors.com/](https://jkpfactors.com/). The version with _paper data set_ is the the basis of the current version of [Jensen, Kelly and Pedersen (2021)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3774514).
+This change log keeps track of changes to the underlying data set. In brackets, we highlight versions of importance. The version with _factor data set_ is the basis of the factor portfolios we upload at [https://jkpfactors.com/](https://jkpfactors.com/). The version with _paper data set_ is the basis of [Jensen, Kelly and Pedersen (2023)](https://onlinelibrary.wiley.com/doi/full/10.1111/jofi.13249).
 
-## 08-02-2022 [Paper data set] [Factor data set]
+## 11-03-2024 [Factor data set]
+__Changes__:
+- Added 2023 data
+- Updated the country classification according the latest MSCI market classification
+
+## 03-03-2023 [Factor data set]
+__Changes__:
+- Added 2022 data
+- Added 'me' (market equity) and 'ret' (total return) and removed 'source_crsp' from daily return files
+
+__Impact__:
+- Replication rate: 83.2% 
+
+## 30-06-2022 [Paper data set] 
+
+__Changes__:
+- Changed name of "Skewness" cluster to "Short-Term Reversal"
+
+__Impact__:
+- Replication rate: 82.4% 
+
+## 08-02-2022 
 
 __Changes__:
 - Fix error in the construction of intrinsic_value. Previously, we failed to scale intrinsic_value by market equity as done in Frankel and Lee (1998). We call the new characteristic ival_me and keep intrinsic_value in the data set. The alpha of the new factor based on ival_me is significantly different from zero, while the factor based on intrinsic_value is insignificant.
 
 __Impact__:
-- Replication rate: 82.4%. (added 2020 data)
+- Replication rate: 82.4% (added 2020 data)
 
 
 ## 16-11-2021 
@@ -24,7 +45,7 @@ __Changes__:
 - Added the option to create industry returns in the portfolios.R code.
 
 __Impact__:
-- Replication rate: 83.2%.
+- Replication rate: 83.2%
 
 ## 27-08-2021 
 
@@ -44,7 +65,7 @@ __Changes__:
 
 __Impact__:
 
-- Replication rate: 83.2%.
+- Replication rate: 83.2%
 - The revisions impacted all factors slightly, but the overall results are qualitatively very similar. 
 
 ## 02-19-2021 
